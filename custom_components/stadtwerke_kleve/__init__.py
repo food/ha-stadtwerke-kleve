@@ -22,6 +22,7 @@ type StadtwerkeKleveConfigEntry = ConfigEntry[DataUpdateCoordinator[PortalData]]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigEntry) -> bool:
+    """Set up Stadtwerke Kleve from a config entry."""
     # A session of its own, so the portal cookies stay out of the shared one.
     session = async_create_clientsession(hass)
     portal = Portal(session, entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD])
@@ -32,6 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigEnt
     }
 
     async def async_update_data() -> PortalData:
+        """Fetch everything from the portal."""
         try:
             return await portal.fetch(consumption)
         except AuthError as err:
@@ -56,6 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigEnt
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigEntry) -> bool:
+    """Migrate old config entries."""
     if entry.version > 1:
         return False
     if entry.minor_version < 2:
@@ -73,8 +76,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigE
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigEntry) -> None:
+    """Reload the entry after the options changed."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigEntry) -> bool:
+    """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

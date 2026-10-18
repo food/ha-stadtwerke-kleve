@@ -1,4 +1,4 @@
-"""Parser checks against anonymised portal responses. Run: python tests/test_parse.py"""
+"""Parser checks against anonymised portal responses, run with python tests/test_parse.py."""
 
 from datetime import date
 import importlib.util
@@ -13,6 +13,7 @@ spec.loader.exec_module(api)
 
 
 def meter(no, media, *registers, removed=""):
+    """Build a meterWidget.json entry."""
     return {
         "meterNo": no,
         "mediaType": media,
@@ -77,6 +78,7 @@ PLAN_PAGE = """
 
 
 def rows(plans):
+    """Plans as plain tuples, for comparing."""
     return {
         m: [[(i.due, i.amount, i.status) for i in card] for card in cards]
         for m, cards in plans.items()
@@ -113,6 +115,7 @@ assert empty.payment_total is None and empty.invoice_amount is None
 
 
 def row(label, value):
+    """Build a label/value row of the contract details page."""
     return (
         f'<div class="col-form-label confirm-page-label"> {label} </div></div>'
         f'<div class="col-12"><div class="col-form-label confirm-page-value" > {value} </div>'
@@ -164,6 +167,7 @@ assert api.match_offer("Unbekannt2030", offers) is None
 
 
 def meter_card(meter_no, unit, *readings):
+    """Build a meter card of the meter details page."""
     rows = "".join(
         f"<tr><td>\n {day}\n</td><td>\n {value} {unit}\n</td></tr>" for day, value in readings
     )

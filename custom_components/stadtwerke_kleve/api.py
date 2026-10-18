@@ -52,6 +52,8 @@ class PortalError(Exception):
 
 @dataclass
 class Reading:
+    """Latest reading of one meter register."""
+
     key: str  # meter number + OBIS code, stable across polls
     media: str  # POWER, GAS or WATER
     meter_no: str
@@ -62,6 +64,8 @@ class Reading:
 
 @dataclass
 class Payment:
+    """Next advance payment of a contract."""
+
     contract_no: str
     media: str
     amount: float
@@ -69,6 +73,8 @@ class Payment:
 
 @dataclass
 class Installment:
+    """One entry of a billing plan."""
+
     due: date
     amount: float | None
     status: str
@@ -76,6 +82,8 @@ class Installment:
 
 @dataclass
 class Tariff:
+    """Energy and base price of a contract."""
+
     media: str
     product: str
     energy_price: float | None  # EUR per kWh, or per m³ for water
@@ -86,6 +94,8 @@ class Tariff:
 
 @dataclass
 class Contract:
+    """A contract as listed on the contract details page."""
+
     media: str
     product: str = ""
     contract_no: str = ""
@@ -96,6 +106,8 @@ class Contract:
 
 @dataclass
 class PortalData:
+    """Everything read from the portal in one poll."""
+
     readings: list[Reading] = field(default_factory=list)
     payments: list[Payment] = field(default_factory=list)
     # One installment list per contract, grouped by media in page order.
@@ -115,12 +127,15 @@ class PortalData:
 
 @dataclass
 class Consumption:
+    """Consumption of a meter over a period."""
+
     value: float
     start: date
     end: date
 
 
 def _amount(text: str | None) -> float | None:
+    """Parse an amount like "-1.234,56 €"."""
     # "-1.234,56 €" -> -1234.56. Only the digits are matched because the
     # € sign arrives in varying encodings.
     m = re.search(r"-?[\d.]+,\d{2}", text or "")
@@ -137,6 +152,7 @@ def _price(text: str | None) -> float | None:
 
 
 def _number(text: str | None) -> float | None:
+    """Parse a number with a decimal comma like "05678,5"."""
     try:
         return float((text or "").strip().replace(",", "."))
     except ValueError:
@@ -144,12 +160,13 @@ def _number(text: str | None) -> float | None:
 
 
 def _german_number(text: str | None) -> float | None:
-    # "4.638 kWh" -> 4638.0, "1.234,5 m³" -> 1234.5
+    """Parse a number like "4.638 kWh" or "1.234,5 m³"."""
     m = re.search(r"\d[\d.]*(?:,\d+)?", text or "")
     return float(m.group(0).replace(".", "").replace(",", ".")) if m else None
 
 
 def _date(text: str | None) -> date | None:
+    """Parse a date in dd.mm.yyyy format."""
     try:
         return datetime.strptime((text or "").strip(), "%d.%m.%Y").date()
     except ValueError:
@@ -157,6 +174,7 @@ def _date(text: str | None) -> date | None:
 
 
 def _text(fragment: str) -> str:
+    """Strip tags and entities from an HTML fragment."""
     plain = html.unescape(re.sub(r"<[^>]+>", " ", fragment))
     return " ".join(plain.split())
 
@@ -258,7 +276,7 @@ def parse_contracts(page: str) -> list[Contract]:
 
 
 def _tariff(media: str, product: str, source: str, prices: list[tuple[str, str]]) -> Tariff:
-    # With tiered prices the first tier counts.
+    """Build a tariff from price rows. With tiered prices the first tier counts."""
     energy = next((v for k, v in prices if k.startswith("Arbeitspreis")), None)
     base = next((v for k, v in prices if k.startswith("Grundpreis")), None)
     base_price = _price(base)
@@ -302,6 +320,7 @@ def match_offer(
 
 
 def parse(meter: dict, budget: dict, invoice: dict, plan_page: str = "") -> PortalData:
+    """Turn the meter, billing plan and invoice widgets into PortalData."""
     data = PortalData(plans=parse_plans(plan_page))
 
     for m in meter["model"]["subElements"]:
@@ -347,6 +366,7 @@ def parse(meter: dict, budget: dict, invoice: dict, plan_page: str = "") -> Port
 
 
 def _has_login_errors(body: str) -> bool:
+    """Tell whether a loginWidget.json reply reports wrong credentials."""
     try:
         reply = json.loads(body)
     except ValueError:
@@ -357,17 +377,22 @@ def _has_login_errors(body: str) -> bool:
 
 
 class Portal:
+    """Client for one portal account."""
+
     def __init__(self, session: aiohttp.ClientSession, username: str, password: str) -> None:
+        """Initialize the client."""
         self._session = session
         self._creds = {"login": username, "password": password, "oneTimePassword": ""}
 
     async def _fetch_text(self, path: str, headers: dict | None = None) -> str:
+        """Fetch a portal page as text."""
         async with self._session.get(BASE + path, headers=headers, timeout=TIMEOUT) as r:
             if r.status != 200:
                 raise PortalError(f"{path}: HTTP {r.status}")
             return (await r.read()).decode("utf-8", "replace")
 
     async def _fetch_json(self, path: str) -> dict:
+        """Fetch a JSON endpoint of the portal."""
         body = await self._fetch_text(path, XHR)
         try:
             return json.loads(body)
@@ -376,6 +401,7 @@ class Portal:
             raise PortalError(f"{path}: no JSON") from err
 
     async def login(self) -> None:
+        """Log in and start a new portal session."""
         self._session.cookie_jar.clear()
         try:
             await self._fetch_text("start")
@@ -445,6 +471,7 @@ class Portal:
         return result
 
     async def _tariffs(self, consumption: Mapping[str, int]) -> list[Tariff]:
+        """Prices of every contract, from the contract page or the price calculator."""
         tariffs = []
         for contract in parse_contracts(await self._fetch_text("contractDetails")):
             if contract.prices:

@@ -23,6 +23,7 @@ spec.loader.exec_module(api)
 
 
 async def main() -> None:
+    """Log in, fetch everything and print it."""
     user, password = input("Username: ").strip(), getpass.getpass("Password: ")
     async with aiohttp.ClientSession() as session:
         if "--wrong-password" in sys.argv:
