@@ -1,0 +1,12 @@
+{
+  "domain": "stadtwerke_kleve",
+  "name": "Stadtwerke Kleve",
+  "codeowners": ["@food"],
+  "config_flow": true,
+  "documentation": "https://github.com/food/ha-stadtwerke-kleve",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/food/ha-stadtwerke-kleve/issues",
+  "requirements": [],
+  "version": "0.2.0"
+}

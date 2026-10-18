@@ -1,0 +1,97 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Stadtwerke Kleve Kundenportal",
+        "data": {
+          "username": "Nutzername",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "username": "Der Nutzername, mit dem du dich im Kundenportal anmeldest.",
+          "password": "Das Passwort für das Kundenportal."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Anmeldung abgelaufen",
+        "description": "Das Portal hat das gespeicherte Passwort abgelehnt. Gib das aktuelle Passwort für {username} ein.",
+        "data": {
+          "password": "Passwort"
+        },
+        "data_description": {
+          "password": "Das Passwort für das Kundenportal."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Nutzername oder Passwort ist falsch.",
+      "cannot_connect": "Das Kundenportal ist nicht erreichbar.",
+      "unknown": "Unerwarteter Fehler, Details stehen im Log."
+    },
+    "abort": {
+      "already_configured": "Dieses Konto ist schon eingerichtet.",
+      "reauth_successful": "Anmeldung aktualisiert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Jahresverbrauch",
+        "description": "Strom- und Gaspreise kommen aus dem öffentlichen Preisrechner der Stadtwerke. Beim Gas hängt der Preis vom Jahresverbrauch ab, trag deinen deshalb in kWh ein.",
+        "data": {
+          "consumption_power": "Strom pro Jahr (kWh)",
+          "consumption_gas": "Gas pro Jahr (kWh)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "reading_power": {
+        "name": "Zählerstand Strom{suffix}"
+      },
+      "reading_gas": {
+        "name": "Zählerstand Gas{suffix}"
+      },
+      "reading_water": {
+        "name": "Zählerstand Wasser{suffix}"
+      },
+      "payment_power": {
+        "name": "Abschlag Strom{suffix}"
+      },
+      "payment_gas": {
+        "name": "Abschlag Gas{suffix}"
+      },
+      "payment_water": {
+        "name": "Abschlag Wasser{suffix}"
+      },
+      "energy_price_power": {
+        "name": "Arbeitspreis Strom{suffix}"
+      },
+      "energy_price_gas": {
+        "name": "Arbeitspreis Gas{suffix}"
+      },
+      "energy_price_water": {
+        "name": "Arbeitspreis Wasser{suffix}"
+      },
+      "base_price_power": {
+        "name": "Grundpreis Strom pro Jahr{suffix}"
+      },
+      "base_price_gas": {
+        "name": "Grundpreis Gas pro Jahr{suffix}"
+      },
+      "base_price_water": {
+        "name": "Grundpreis Wasser pro Jahr{suffix}"
+      },
+      "payment_total": {
+        "name": "Abschlag gesamt"
+      },
+      "payment_due": {
+        "name": "Abschlag fällig am"
+      },
+      "invoice": {
+        "name": "Letzte Rechnung"
+      }
+    }
+  }
+}

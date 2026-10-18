@@ -1,0 +1,97 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Stadtwerke Kleve customer portal",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "The username you use to log in to the customer portal.",
+          "password": "The password of the customer portal."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Login expired",
+        "description": "The portal rejected the stored password. Enter the current password for {username}.",
+        "data": {
+          "password": "Password"
+        },
+        "data_description": {
+          "password": "The password of the customer portal."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Username or password is wrong.",
+      "cannot_connect": "The customer portal is not reachable.",
+      "unknown": "Unexpected error, see the log for details."
+    },
+    "abort": {
+      "already_configured": "This account is already set up.",
+      "reauth_successful": "Login updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Annual consumption",
+        "description": "Electricity and gas prices come from the public price calculator of the Stadtwerke. Gas prices depend on the annual consumption, so enter yours in kWh.",
+        "data": {
+          "consumption_power": "Electricity per year (kWh)",
+          "consumption_gas": "Gas per year (kWh)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "reading_power": {
+        "name": "Electricity meter reading{suffix}"
+      },
+      "reading_gas": {
+        "name": "Gas meter reading{suffix}"
+      },
+      "reading_water": {
+        "name": "Water meter reading{suffix}"
+      },
+      "payment_power": {
+        "name": "Electricity advance payment{suffix}"
+      },
+      "payment_gas": {
+        "name": "Gas advance payment{suffix}"
+      },
+      "payment_water": {
+        "name": "Water advance payment{suffix}"
+      },
+      "energy_price_power": {
+        "name": "Electricity price{suffix}"
+      },
+      "energy_price_gas": {
+        "name": "Gas price{suffix}"
+      },
+      "energy_price_water": {
+        "name": "Water price{suffix}"
+      },
+      "base_price_power": {
+        "name": "Electricity base price per year{suffix}"
+      },
+      "base_price_gas": {
+        "name": "Gas base price per year{suffix}"
+      },
+      "base_price_water": {
+        "name": "Water base price per year{suffix}"
+      },
+      "payment_total": {
+        "name": "Total advance payment"
+      },
+      "payment_due": {
+        "name": "Next payment due"
+      },
+      "invoice": {
+        "name": "Last invoice"
+      }
+    }
+  }
+}
