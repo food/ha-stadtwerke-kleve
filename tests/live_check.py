@@ -23,6 +23,7 @@ spec.loader.exec_module(api)
 
 
 async def main() -> None:
+    """Log in, fetch everything and print it."""
     user, password = input("Username: ").strip(), getpass.getpass("Password: ")
     async with aiohttp.ClientSession() as session:
         if "--wrong-password" in sys.argv:
@@ -42,6 +43,14 @@ async def main() -> None:
         for card in cards:
             print(f"plan {media:6}", ", ".join(f"{i.due} {i.amount} {i.status}" for i in card))
     print(f"last invoice {data.invoice_amount} EUR on {data.invoice_date} ({data.invoice_type})")
+    for meter_no, readings in data.history.items():
+        used = data.consumption.get(meter_no)
+        print(
+            f"history {meter_no}: {len(readings)} readings,",
+            f"last year {used.value:.1f} ({used.start} to {used.end})"
+            if used
+            else "no yearly value",
+        )
     for t in data.tariffs:
         print(
             f"tariff {t.media:6} {t.energy_price} EUR/unit, {t.base_price} EUR/year, {t.source}: {t.product}"

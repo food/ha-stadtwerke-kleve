@@ -1,4 +1,4 @@
-"""Parser checks against anonymised portal responses. Run: python tests/test_parse.py"""
+"""Parser checks against anonymised portal responses, run with python tests/test_parse.py."""
 
 from datetime import date
 import importlib.util
@@ -13,6 +13,7 @@ spec.loader.exec_module(api)
 
 
 def meter(no, media, *registers, removed=""):
+    """Build a meterWidget.json entry."""
     return {
         "meterNo": no,
         "mediaType": media,
@@ -77,6 +78,7 @@ PLAN_PAGE = """
 
 
 def rows(plans):
+    """Plans as plain tuples, for comparing."""
     return {
         m: [[(i.due, i.amount, i.status) for i in card] for card in cards]
         for m, cards in plans.items()
@@ -113,6 +115,7 @@ assert empty.payment_total is None and empty.invoice_amount is None
 
 
 def row(label, value):
+    """Build a label/value row of the contract details page."""
     return (
         f'<div class="col-form-label confirm-page-label"> {label} </div></div>'
         f'<div class="col-12"><div class="col-form-label confirm-page-value" > {value} </div>'
@@ -161,6 +164,72 @@ rows = api.match_offer(contracts[0].product, offers)
 power = api._tariff("POWER", contracts[0].product, "price_calculator", rows)
 assert (power.energy_price, power.base_price) == (0.3, 90.0), power
 assert api.match_offer("Unbekannt2030", offers) is None
+
+
+def meter_card(meter_no, unit, *readings):
+    """Build a meter card of the meter details page."""
+    rows = "".join(
+        f"<tr><td>\n {day}\n</td><td>\n {value} {unit}\n</td></tr>" for day, value in readings
+    )
+    return (
+        f'<div class="card"><div class="card-header">'
+        f'<h2 class="card-title">Zähler {meter_no}</h2> </div>'
+        f'<table class="table table-striped 1"><thead><tr><th>Datum</th><th>Zählerstand</th></tr>'
+        f"</thead><tbody>{rows}</tbody></table></div>"
+    )
+
+
+# Same layout as the portal's meter details page: newest reading first,
+# thousands separated by a dot.
+METER_PAGE = (
+    '<h2 class="card-title">Zähler</h2>'
+    + meter_card(
+        "M1",
+        "kWh",
+        ("01.10.2026", "2.500"),
+        ("01.04.2026", "2.000"),
+        ("01.10.2025", "1.500"),
+        ("01.10.2024", "100"),
+    )
+    + meter_card("M2", "m&sup3;", ("01.10.2026", "1.000,5"), ("01.04.2026", "900"))
+    # The real page has another table after the last card (a noscript notice).
+    + "<table><tr><td>01.01.2030</td><td>5 Hinweise</td></tr></table>"
+)
+history = api.parse_meter_history(METER_PAGE)
+assert list(history) == ["M1", "M2"], history
+assert history["M1"][0] == (date(2024, 10, 1), 100.0)
+assert history["M2"][-1] == (date(2026, 10, 1), 1000.5)
+assert len(history["M2"]) == 2, history["M2"]
+
+used = api.consumption_last_year(history["M1"])
+assert (used.value, used.start, used.end) == (1000.0, date(2025, 10, 1), date(2026, 10, 1))
+# Halfway between two readings the value is interpolated.
+used = api.consumption_last_year([(date(2025, 1, 1), 0.0), (date(2026, 1, 1), 365.0)])
+assert used.value == 365.0
+mid = [(date(2025, 1, 1), 0.0), (date(2025, 7, 2), 100.0), (date(2026, 7, 2), 200.0)]
+assert api.consumption_last_year(mid).value == 100.0
+# Less than a year of history gives nothing.
+assert api.consumption_last_year(history["M2"]) is None
+# Two registers on one day cannot be separated.
+twin = [(date(2025, 1, 1), 0.0), (date(2026, 1, 1), 300.0), (date(2026, 1, 1), 100.0)]
+assert api.consumption_last_year(twin) is None
+# A corrected lower reading must not turn into negative consumption.
+assert api.consumption_last_year([(date(2025, 1, 1), 500.0), (date(2026, 1, 1), 400.0)]) is None
+
+# Price lookup consumption: option first, then history (gas in kWh), then default.
+data = api.PortalData(
+    readings=[
+        api.Reading("M1_x", "POWER", "M1", "x", 2500.0, None),
+        api.Reading("G1_x", "GAS", "G1", "x", 700.0, None),
+    ],
+    consumption={
+        "M1": api.consumption_last_year(history["M1"]),
+        "G1": api.consumption_last_year([(date(2025, 10, 1), 100.0), (date(2026, 10, 1), 700.0)]),
+    },
+)
+assert api.Portal._consumption(data, {}) == {"POWER": 1000, "GAS": 6000}
+assert api.Portal._consumption(data, {"GAS": 12000}) == {"POWER": 1000, "GAS": 12000}
+assert api.Portal._consumption(api.PortalData(), {}) == {"POWER": 3000, "GAS": 3000}
 
 assert api._has_login_errors('{"hasFieldErrors": true, "fielderrors": {}}')
 assert not api._has_login_errors('{"hasFieldErrors": false, "hasGlobalErrors": false}')

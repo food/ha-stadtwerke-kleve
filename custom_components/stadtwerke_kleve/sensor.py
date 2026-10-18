@@ -21,7 +21,15 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 
 from . import StadtwerkeKleveConfigEntry
-from .api import START_URL, Installment, Payment, PortalData, Reading, Tariff
+from .api import (
+    START_URL,
+    Consumption,
+    Installment,
+    Payment,
+    PortalData,
+    Reading,
+    Tariff,
+)
 from .const import DOMAIN
 
 type Coordinator = DataUpdateCoordinator[PortalData]
@@ -40,6 +48,8 @@ PRICE_UNITS = {
 
 @dataclass(frozen=True, kw_only=True)
 class StadtwerkeKleveSensorDescription(SensorEntityDescription):
+    """Describes a sensor that reads one value from PortalData."""
+
     value_fn: Callable[[PortalData], float | date | None]
     attrs_fn: Callable[[PortalData], dict[str, Any]] | None = None
 
@@ -80,6 +90,7 @@ async def async_setup_entry(
     entry: StadtwerkeKleveConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
+    """Create sensors for the meters, contracts and prices found."""
     coordinator = entry.runtime_data
     data = coordinator.data
 
@@ -97,6 +108,13 @@ async def async_setup_entry(
         if registers[reading.meter_no] > 1:
             suffix += f" {reading.obis}"
         entities.append(ReadingSensor(coordinator, entry, reading, suffix))
+
+    media_of_meter = {r.meter_no: r.media for r in data.readings}
+    for meter_no in data.history:
+        media = media_of_meter.get(meter_no)
+        if media in READING_UNITS:
+            suffix = f" {meter_no}" if meters[media] > 1 else ""
+            entities.append(ConsumptionSensor(coordinator, entry, meter_no, media, suffix))
 
     seen: Counter[str] = Counter()
     for payment in data.payments:
@@ -123,11 +141,14 @@ async def async_setup_entry(
 
 
 class StadtwerkeKleveSensor(CoordinatorEntity[Coordinator], SensorEntity):
+    """Base class with one device per account."""
+
     _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: Coordinator, entry: StadtwerkeKleveConfigEntry, key: str
     ) -> None:
+        """Set unique id and device."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.unique_id}_{key}"
         self._attr_device_info = DeviceInfo(
@@ -140,6 +161,8 @@ class StadtwerkeKleveSensor(CoordinatorEntity[Coordinator], SensorEntity):
 
 
 class ReadingSensor(StadtwerkeKleveSensor):
+    """Latest meter reading."""
+
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
 
     def __init__(
@@ -149,6 +172,7 @@ class ReadingSensor(StadtwerkeKleveSensor):
         reading: Reading,
         suffix: str,
     ) -> None:
+        """Set name and unit from the media."""
         super().__init__(coordinator, entry, f"reading_{reading.key}")
         self._key = reading.key
         if reading.media in READING_UNITS:
@@ -161,19 +185,23 @@ class ReadingSensor(StadtwerkeKleveSensor):
             self._attr_name = f"{reading.media.title()}{suffix}"
 
     def _reading(self) -> Reading | None:
+        """Return the reading of this register from the latest data."""
         return next((r for r in self.coordinator.data.readings if r.key == self._key), None)
 
     @property
     def available(self) -> bool:
+        """Return False once the register is no longer listed."""
         return super().available and self._reading() is not None
 
     @property
     def native_value(self) -> float | None:
+        """Return the meter reading."""
         reading = self._reading()
         return reading.value if reading else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return reading date, meter number and OBIS code."""
         reading = self._reading()
         if reading is None:
             return None
@@ -184,7 +212,57 @@ class ReadingSensor(StadtwerkeKleveSensor):
         }
 
 
+class ConsumptionSensor(StadtwerkeKleveSensor):
+    """Consumption of one meter over the last 12 months, from its reading history."""
+
+    _unrecorded_attributes = frozenset({"readings"})
+
+    def __init__(
+        self,
+        coordinator: Coordinator,
+        entry: StadtwerkeKleveConfigEntry,
+        meter_no: str,
+        media: str,
+        suffix: str,
+    ) -> None:
+        """Set name and unit from the media."""
+        super().__init__(coordinator, entry, f"consumption_{meter_no}")
+        self._meter_no = meter_no
+        self._attr_translation_key = f"consumption_{media.lower()}"
+        self._attr_translation_placeholders = {"suffix": suffix}
+        self._attr_native_unit_of_measurement = READING_UNITS[media][1]
+        self._attr_suggested_display_precision = 0
+
+    def _history(self) -> list[tuple[date, float]]:
+        """Return the reading history of this meter."""
+        return self.coordinator.data.history.get(self._meter_no, [])
+
+    def _consumption(self) -> Consumption | None:
+        """Return the yearly consumption, None while the history is shorter than a year."""
+        return self.coordinator.data.consumption.get(self._meter_no)
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the consumption."""
+        used = self._consumption()
+        return round(used.value, 1) if used else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return the period and the reading history."""
+        used = self._consumption()
+        if used is None:
+            return None
+        return {
+            "period_start": used.start,
+            "period_end": used.end,
+            "readings": [{"date": day, "value": value} for day, value in self._history()],
+        }
+
+
 class PaymentSensor(StadtwerkeKleveSensor):
+    """Next advance payment of one contract."""
+
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = CURRENCY_EURO
     _attr_suggested_display_precision = 2
@@ -198,6 +276,7 @@ class PaymentSensor(StadtwerkeKleveSensor):
         plan_index: int,
         suffix: str,
     ) -> None:
+        """Set name and the billing plan card of this contract."""
         super().__init__(coordinator, entry, f"payment_{payment.contract_no}")
         self._contract_no = payment.contract_no
         self._media = payment.media
@@ -209,24 +288,29 @@ class PaymentSensor(StadtwerkeKleveSensor):
             self._attr_name = f"{payment.media.title()}{suffix}"
 
     def _payment(self) -> Payment | None:
+        """Return the payment of this contract from the latest data."""
         payments = self.coordinator.data.payments
         return next((p for p in payments if p.contract_no == self._contract_no), None)
 
     def _installments(self) -> list[Installment]:
+        """Return the upcoming installments of this contract."""
         plans = self.coordinator.data.plans.get(self._media, [])
         return plans[self._plan_index] if self._plan_index < len(plans) else []
 
     @property
     def available(self) -> bool:
+        """Return False once the contract is no longer listed."""
         return super().available and self._payment() is not None
 
     @property
     def native_value(self) -> float | None:
+        """Return the payment amount."""
         payment = self._payment()
         return payment.amount if payment else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the upcoming installments."""
         return {
             "installments": [
                 {"due": i.due, "amount": i.amount, "status": i.status} for i in self._installments()
@@ -235,6 +319,8 @@ class PaymentSensor(StadtwerkeKleveSensor):
 
 
 class SummarySensor(StadtwerkeKleveSensor):
+    """Sensor defined by a description."""
+
     entity_description: StadtwerkeKleveSensorDescription
 
     def __init__(
@@ -243,15 +329,18 @@ class SummarySensor(StadtwerkeKleveSensor):
         entry: StadtwerkeKleveConfigEntry,
         description: StadtwerkeKleveSensorDescription,
     ) -> None:
+        """Store the description."""
         super().__init__(coordinator, entry, description.key)
         self.entity_description = description
 
     @property
     def native_value(self) -> float | date | None:
+        """Return the value from the description."""
         return self.entity_description.value_fn(self.coordinator.data)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return the attributes from the description."""
         if self.entity_description.attrs_fn is None:
             return None
         return self.entity_description.attrs_fn(self.coordinator.data)
@@ -270,6 +359,7 @@ class TariffSensor(StadtwerkeKleveSensor):
         index: int,
         suffix: str,
     ) -> None:
+        """Set unique id and name from kind and media."""
         key = f"{self.kind}_{media.lower()}" + (f"_{index}" if index else "")
         super().__init__(coordinator, entry, key)
         self._media = media
@@ -278,15 +368,19 @@ class TariffSensor(StadtwerkeKleveSensor):
         self._attr_translation_placeholders = {"suffix": suffix}
 
     def _tariff(self) -> Tariff | None:
+        """Return the tariff of this contract from the latest data."""
         tariffs = [t for t in self.coordinator.data.tariffs if t.media == self._media]
         return tariffs[self._index] if self._index < len(tariffs) else None
 
     @property
     def available(self) -> bool:
+        """Return False when no price was found."""
         return super().available and self._tariff() is not None
 
 
 class EnergyPriceSensor(TariffSensor):
+    """Energy price per kWh or m³."""
+
     kind = "energy_price"
     _unrecorded_attributes = frozenset({"price_details"})
 
@@ -298,17 +392,20 @@ class EnergyPriceSensor(TariffSensor):
         index: int,
         suffix: str,
     ) -> None:
+        """Set unit and precision from the media."""
         super().__init__(coordinator, entry, media, index, suffix)
         self._attr_native_unit_of_measurement = PRICE_UNITS[media]
         self._attr_suggested_display_precision = 2 if media == "WATER" else 4
 
     @property
     def native_value(self) -> float | None:
+        """Return the energy price."""
         tariff = self._tariff()
         return tariff.energy_price if tariff else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return product, source and the prices as shown in the portal."""
         tariff = self._tariff()
         if tariff is None:
             return None
@@ -320,6 +417,8 @@ class EnergyPriceSensor(TariffSensor):
 
 
 class BasePriceSensor(TariffSensor):
+    """Base price per year."""
+
     kind = "base_price"
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = CURRENCY_EURO
@@ -327,5 +426,6 @@ class BasePriceSensor(TariffSensor):
 
     @property
     def native_value(self) -> float | None:
+        """Return the base price."""
         tariff = self._tariff()
         return round(tariff.base_price, 2) if tariff and tariff.base_price is not None else None

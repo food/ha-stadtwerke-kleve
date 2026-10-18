@@ -12,8 +12,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import html
+from itertools import pairwise
 import json
 import logging
 import re
@@ -30,9 +31,15 @@ TIMEOUT = aiohttp.ClientTimeout(total=30)
 # Media names as the portal writes them in page titles and labels.
 MEDIA_TITLES = {"Strom": "POWER", "Gas": "GAS", "Wasser": "WATER"}
 
-# Annual consumption in kWh sent to the price calculator when none is set.
-# Gas prices are tiered by consumption, this picks the lowest tier.
+# Annual consumption in kWh sent to the price calculator when neither an
+# option nor the meter history gives one. Gas prices are tiered by
+# consumption, this picks the lowest tier.
 DEFAULT_CONSUMPTION = 3000
+
+# Gas is billed in kWh but metered in m³. The exact factor (calorific value
+# times correction factor) is on the annual bill; for picking a price tier a
+# typical value is close enough.
+GAS_KWH_PER_M3 = 10.0
 
 
 class AuthError(Exception):
@@ -45,6 +52,8 @@ class PortalError(Exception):
 
 @dataclass
 class Reading:
+    """Latest reading of one meter register."""
+
     key: str  # meter number + OBIS code, stable across polls
     media: str  # POWER, GAS or WATER
     meter_no: str
@@ -55,6 +64,8 @@ class Reading:
 
 @dataclass
 class Payment:
+    """Next advance payment of a contract."""
+
     contract_no: str
     media: str
     amount: float
@@ -62,6 +73,8 @@ class Payment:
 
 @dataclass
 class Installment:
+    """One entry of a billing plan."""
+
     due: date
     amount: float | None
     status: str
@@ -69,6 +82,8 @@ class Installment:
 
 @dataclass
 class Tariff:
+    """Energy and base price of a contract."""
+
     media: str
     product: str
     energy_price: float | None  # EUR per kWh, or per m³ for water
@@ -79,6 +94,8 @@ class Tariff:
 
 @dataclass
 class Contract:
+    """A contract as listed on the contract details page."""
+
     media: str
     product: str = ""
     contract_no: str = ""
@@ -89,6 +106,8 @@ class Contract:
 
 @dataclass
 class PortalData:
+    """Everything read from the portal in one poll."""
+
     readings: list[Reading] = field(default_factory=list)
     payments: list[Payment] = field(default_factory=list)
     # One installment list per contract, grouped by media in page order.
@@ -100,9 +119,22 @@ class PortalData:
     invoice_no: str | None = None
     invoice_type: str | None = None
     tariffs: list[Tariff] = field(default_factory=list)
+    # Reading history per meter number, oldest first.
+    history: dict[str, list[tuple[date, float]]] = field(default_factory=dict)
+    consumption: dict[str, Consumption] = field(default_factory=dict)
+
+
+@dataclass
+class Consumption:
+    """Consumption of a meter over a period."""
+
+    value: float
+    start: date
+    end: date
 
 
 def _amount(text: str | None) -> float | None:
+    """Parse an amount like "-1.234,56 €"."""
     # "-1.234,56 €" -> -1234.56. Only the digits are matched because the
     # € sign arrives in varying encodings.
     m = re.search(r"-?[\d.]+,\d{2}", text or "")
@@ -119,13 +151,21 @@ def _price(text: str | None) -> float | None:
 
 
 def _number(text: str | None) -> float | None:
+    """Parse a number with a decimal comma like "05678,5"."""
     try:
         return float((text or "").strip().replace(",", "."))
     except ValueError:
         return None
 
 
+def _german_number(text: str | None) -> float | None:
+    """Parse a number like "4.638 kWh" or "1.234,5 m³"."""
+    m = re.search(r"\d[\d.]*(?:,\d+)?", text or "")
+    return float(m.group(0).replace(".", "").replace(",", ".")) if m else None
+
+
 def _date(text: str | None) -> date | None:
+    """Parse a date in dd.mm.yyyy format."""
     try:
         return datetime.strptime((text or "").strip(), "%d.%m.%Y").date()
     except ValueError:
@@ -133,6 +173,7 @@ def _date(text: str | None) -> date | None:
 
 
 def _text(fragment: str) -> str:
+    """Strip tags and entities from an HTML fragment."""
     plain = html.unescape(re.sub(r"<[^>]+>", " ", fragment))
     return " ".join(plain.split())
 
@@ -155,6 +196,54 @@ def parse_plans(page: str) -> dict[str, list[list[Installment]]]:
                 rows.append(Installment(due, _amount(cells[1]), cells[2]))
         plans.setdefault(media, []).append(rows)
     return plans
+
+
+def parse_meter_history(page: str) -> dict[str, list[tuple[date, float]]]:
+    """Read the reading history of every meter from the meter details page.
+
+    Each meter has a card titled "Zähler <number>" with a table of reading
+    date and value. Only that first table counts: the last card would
+    otherwise run on into whatever the page has below it.
+    """
+    history: dict[str, list[tuple[date, float]]] = {}
+    cards = re.split(r'<h2 class="card-title">\s*Z\S{1,8}hler\s+', page)[1:]
+    for card in cards:
+        meter_no = card.split("<", 1)[0].strip()
+        table = card.split("</table>", 1)[0]
+        rows = []
+        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", table, re.S):
+            cells = [_text(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+            if len(cells) >= 2 and (day := _date(cells[0])):
+                value = _german_number(cells[1])
+                if value is not None:
+                    rows.append((day, value))
+        if meter_no and rows:
+            history[meter_no] = sorted(rows)
+    return history
+
+
+def consumption_last_year(readings: list[tuple[date, float]]) -> Consumption | None:
+    """Consumption over the 365 days before the latest reading.
+
+    Readings are irregular, so the value one year back is interpolated
+    linearly between the two readings around it. Returns None when the
+    history cannot give a sensible value.
+    """
+    if len(readings) < 2:
+        return None
+    # Two rows on one day means a meter with several registers (HT/NT) whose
+    # rows cannot be told apart here.
+    if len({day for day, _ in readings}) != len(readings):
+        return None
+    end, end_value = readings[-1]
+    start = end - timedelta(days=365)
+    for (day_a, value_a), (day_b, value_b) in pairwise(readings):
+        if day_a <= start <= day_b:
+            share = (start - day_a).days / max((day_b - day_a).days, 1)
+            used = end_value - (value_a + share * (value_b - value_a))
+            # A corrected lower reading or a replaced counter runs backwards.
+            return Consumption(used, start, end) if used >= 0 else None
+    return None
 
 
 def parse_contracts(page: str) -> list[Contract]:
@@ -186,7 +275,7 @@ def parse_contracts(page: str) -> list[Contract]:
 
 
 def _tariff(media: str, product: str, source: str, prices: list[tuple[str, str]]) -> Tariff:
-    # With tiered prices the first tier counts.
+    """Build a tariff from price rows. With tiered prices the first tier counts."""
     energy = next((v for k, v in prices if k.startswith("Arbeitspreis")), None)
     base = next((v for k, v in prices if k.startswith("Grundpreis")), None)
     base_price = _price(base)
@@ -230,6 +319,7 @@ def match_offer(
 
 
 def parse(meter: dict, budget: dict, invoice: dict, plan_page: str = "") -> PortalData:
+    """Turn the meter, billing plan and invoice widgets into PortalData."""
     data = PortalData(plans=parse_plans(plan_page))
 
     for m in meter["model"]["subElements"]:
@@ -275,6 +365,7 @@ def parse(meter: dict, budget: dict, invoice: dict, plan_page: str = "") -> Port
 
 
 def _has_login_errors(body: str) -> bool:
+    """Tell whether a loginWidget.json reply reports wrong credentials."""
     try:
         reply = json.loads(body)
     except ValueError:
@@ -285,17 +376,22 @@ def _has_login_errors(body: str) -> bool:
 
 
 class Portal:
+    """Client for one portal account."""
+
     def __init__(self, session: aiohttp.ClientSession, username: str, password: str) -> None:
+        """Initialize the client."""
         self._session = session
         self._creds = {"login": username, "password": password, "oneTimePassword": ""}
 
     async def _fetch_text(self, path: str, headers: dict | None = None) -> str:
+        """Fetch a portal page as text."""
         async with self._session.get(BASE + path, headers=headers, timeout=TIMEOUT) as r:
             if r.status != 200:
                 raise PortalError(f"{path}: HTTP {r.status}")
             return (await r.read()).decode("utf-8", "replace")
 
     async def _fetch_json(self, path: str) -> dict:
+        """Fetch a JSON endpoint of the portal."""
         body = await self._fetch_text(path, XHR)
         try:
             return json.loads(body)
@@ -304,6 +400,7 @@ class Portal:
             raise PortalError(f"{path}: no JSON") from err
 
     async def login(self) -> None:
+        """Log in and start a new portal session."""
         self._session.cookie_jar.clear()
         try:
             await self._fetch_text("start")
@@ -357,7 +454,23 @@ class Portal:
                 raise PortalError(f"productSearch: HTTP {r.status}")
             return (await r.read()).decode("utf-8", "replace")
 
+    @staticmethod
+    def _consumption(data: PortalData, overrides: Mapping[str, int]) -> dict[str, int]:
+        """Yearly kWh per media for the price lookup: option, then history, then default."""
+        result = {}
+        for media in ("POWER", "GAS"):
+            if overrides.get(media):
+                result[media] = overrides[media]
+                continue
+            meters = {r.meter_no for r in data.readings if r.media == media}
+            total = sum(data.consumption[m].value for m in meters if m in data.consumption)
+            if media == "GAS":
+                total *= GAS_KWH_PER_M3
+            result[media] = round(total) or DEFAULT_CONSUMPTION
+        return result
+
     async def _tariffs(self, consumption: Mapping[str, int]) -> list[Tariff]:
+        """Prices of every contract, from the contract page or the price calculator."""
         tariffs = []
         for contract in parse_contracts(await self._fetch_text("contractDetails")):
             if contract.prices:
@@ -369,7 +482,7 @@ class Portal:
                     contract.media,
                     contract.postal_code,
                     contract.city or "",
-                    consumption.get(contract.media, DEFAULT_CONSUMPTION),
+                    consumption[contract.media],
                 )
                 if rows := match_offer(contract.product, parse_price_calculator(page)):
                     tariffs.append(
@@ -377,8 +490,20 @@ class Portal:
                     )
         return tariffs
 
+    async def _optional_page(self, path: str) -> str:
+        """Fetch a page whose data is extra; keep the other sensors alive without it."""
+        try:
+            return await self._fetch_text(path)
+        except (PortalError, aiohttp.ClientError, TimeoutError) as err:
+            _LOGGER.debug("%s not available: %s", path, err)
+            return ""
+
     async def fetch(self, consumption: Mapping[str, int] | None = None) -> PortalData:
-        """Read everything. consumption maps POWER/GAS to kWh per year, for the prices."""
+        """Read everything.
+
+        consumption maps POWER/GAS to kWh per year for the price lookup. Media
+        not in it are estimated from the meter history.
+        """
         # A fresh login on every poll. Polls are hours apart, the portal
         # session would have expired in between anyway.
         await self.login()
@@ -386,16 +511,18 @@ class Portal:
             meter = await self._fetch_json("meterWidget.json?responsiveDesign=true")
             budget = await self._fetch_json("budgetBillingPlanWidget.json")
             invoice = await self._fetch_json("invoiceWidget.json")
-            try:
-                plan_page = await self._fetch_text("budgetBillingPlanDetails")
-            except (PortalError, aiohttp.ClientError, TimeoutError) as err:
-                # The plan is extra information; keep the other sensors alive.
-                _LOGGER.debug("Billing plan page not available: %s", err)
-                plan_page = ""
-            data = parse(meter, budget, invoice, plan_page)
+            data = parse(
+                meter, budget, invoice, await self._optional_page("budgetBillingPlanDetails")
+            )
+            data.history = parse_meter_history(await self._optional_page("meterDetails"))
+            data.consumption = {
+                meter_no: used
+                for meter_no, readings in data.history.items()
+                if (used := consumption_last_year(readings))
+            }
             try:
                 # Last, because the price calculator drops the login session.
-                data.tariffs = await self._tariffs(consumption or {})
+                data.tariffs = await self._tariffs(self._consumption(data, consumption or {}))
             except (PortalError, aiohttp.ClientError, TimeoutError) as err:
                 _LOGGER.debug("Prices not available: %s", err)
             return data

@@ -37,7 +37,7 @@
     "step": {
       "init": {
         "title": "Jahresverbrauch",
-        "description": "Strom- und Gaspreise kommen aus dem öffentlichen Preisrechner der Stadtwerke. Beim Gas hängt der Preis vom Jahresverbrauch ab, trag deinen deshalb in kWh ein.",
+        "description": "Strom- und Gaspreise kommen aus dem öffentlichen Preisrechner der Stadtwerke und hängen vom Jahresverbrauch ab. Bei 0 wird er aus den Zählerständen geschätzt, sonst gilt dein Wert in kWh.",
         "data": {
           "consumption_power": "Strom pro Jahr (kWh)",
           "consumption_gas": "Gas pro Jahr (kWh)"
@@ -55,6 +55,15 @@
       },
       "reading_water": {
         "name": "Zählerstand Wasser{suffix}"
+      },
+      "consumption_power": {
+        "name": "Verbrauch Strom letzte 12 Monate{suffix}"
+      },
+      "consumption_gas": {
+        "name": "Verbrauch Gas letzte 12 Monate{suffix}"
+      },
+      "consumption_water": {
+        "name": "Verbrauch Wasser letzte 12 Monate{suffix}"
       },
       "payment_power": {
         "name": "Abschlag Strom{suffix}"

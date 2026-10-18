@@ -37,7 +37,7 @@
     "step": {
       "init": {
         "title": "Annual consumption",
-        "description": "Electricity and gas prices come from the public price calculator of the Stadtwerke. Gas prices depend on the annual consumption, so enter yours in kWh.",
+        "description": "Electricity and gas prices come from the public price calculator of the Stadtwerke and depend on the annual consumption. Leave 0 to estimate it from the meter readings, or enter your own value in kWh.",
         "data": {
           "consumption_power": "Electricity per year (kWh)",
           "consumption_gas": "Gas per year (kWh)"
@@ -55,6 +55,15 @@
       },
       "reading_water": {
         "name": "Water meter reading{suffix}"
+      },
+      "consumption_power": {
+        "name": "Electricity consumption last 12 months{suffix}"
+      },
+      "consumption_gas": {
+        "name": "Gas consumption last 12 months{suffix}"
+      },
+      "consumption_water": {
+        "name": "Water consumption last 12 months{suffix}"
       },
       "payment_power": {
         "name": "Electricity advance payment{suffix}"
