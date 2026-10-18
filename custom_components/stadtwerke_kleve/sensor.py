@@ -21,7 +21,15 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 
 from . import StadtwerkeKleveConfigEntry
-from .api import START_URL, Installment, Payment, PortalData, Reading, Tariff
+from .api import (
+    START_URL,
+    Consumption,
+    Installment,
+    Payment,
+    PortalData,
+    Reading,
+    Tariff,
+)
 from .const import DOMAIN
 
 type Coordinator = DataUpdateCoordinator[PortalData]
@@ -97,6 +105,13 @@ async def async_setup_entry(
         if registers[reading.meter_no] > 1:
             suffix += f" {reading.obis}"
         entities.append(ReadingSensor(coordinator, entry, reading, suffix))
+
+    media_of_meter = {r.meter_no: r.media for r in data.readings}
+    for meter_no in data.history:
+        media = media_of_meter.get(meter_no)
+        if media in READING_UNITS:
+            suffix = f" {meter_no}" if meters[media] > 1 else ""
+            entities.append(ConsumptionSensor(coordinator, entry, meter_no, media, suffix))
 
     seen: Counter[str] = Counter()
     for payment in data.payments:
@@ -181,6 +196,51 @@ class ReadingSensor(StadtwerkeKleveSensor):
             "reading_date": reading.reading_date,
             "meter_number": reading.meter_no,
             "obis": reading.obis,
+        }
+
+
+class ConsumptionSensor(StadtwerkeKleveSensor):
+    """Consumption of one meter over the last 12 months, from its reading history."""
+
+    _unrecorded_attributes = frozenset({"readings"})
+
+    def __init__(
+        self,
+        coordinator: Coordinator,
+        entry: StadtwerkeKleveConfigEntry,
+        meter_no: str,
+        media: str,
+        suffix: str,
+    ) -> None:
+        super().__init__(coordinator, entry, f"consumption_{meter_no}")
+        self._meter_no = meter_no
+        self._attr_translation_key = f"consumption_{media.lower()}"
+        self._attr_translation_placeholders = {"suffix": suffix}
+        self._attr_native_unit_of_measurement = READING_UNITS[media][1]
+        self._attr_suggested_display_precision = 0
+
+    def _history(self) -> list[tuple[date, float]]:
+        return self.coordinator.data.history.get(self._meter_no, [])
+
+    def _consumption(self) -> Consumption | None:
+        # None while the history covers less than a year: shown as unknown,
+        # not as unavailable.
+        return self.coordinator.data.consumption.get(self._meter_no)
+
+    @property
+    def native_value(self) -> float | None:
+        used = self._consumption()
+        return round(used.value, 1) if used else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        used = self._consumption()
+        if used is None:
+            return None
+        return {
+            "period_start": used.start,
+            "period_end": used.end,
+            "readings": [{"date": day, "value": value} for day, value in self._history()],
         }
 
 

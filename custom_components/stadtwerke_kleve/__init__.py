@@ -11,7 +11,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import DEFAULT_CONSUMPTION, AuthError, Portal, PortalData, PortalError
+from .api import AuthError, Portal, PortalData, PortalError
 from .const import CONF_CONSUMPTION_GAS, CONF_CONSUMPTION_POWER, DOMAIN, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,9 +25,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigEnt
     # A session of its own, so the portal cookies stay out of the shared one.
     session = async_create_clientsession(hass)
     portal = Portal(session, entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD])
+    # 0 or unset means: estimate from the meter readings.
     consumption = {
-        "POWER": entry.options.get(CONF_CONSUMPTION_POWER, DEFAULT_CONSUMPTION),
-        "GAS": entry.options.get(CONF_CONSUMPTION_GAS, DEFAULT_CONSUMPTION),
+        "POWER": entry.options.get(CONF_CONSUMPTION_POWER, 0),
+        "GAS": entry.options.get(CONF_CONSUMPTION_GAS, 0),
     }
 
     async def async_update_data() -> PortalData:
@@ -51,6 +52,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigEnt
     entry.runtime_data = coordinator
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigEntry) -> bool:
+    if entry.version > 1:
+        return False
+    if entry.minor_version < 2:
+        # Up to 0.2.x the options form was prefilled with 3000 kWh, so a stored
+        # 3000 is that default and not a value the user chose. 0 now means
+        # "estimate from the meter readings".
+        options = {
+            key: 0
+            if key in (CONF_CONSUMPTION_POWER, CONF_CONSUMPTION_GAS) and value == 3000
+            else value
+            for key, value in entry.options.items()
+        }
+        hass.config_entries.async_update_entry(entry, options=options, minor_version=2)
     return True
 
 

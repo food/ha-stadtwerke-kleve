@@ -18,7 +18,7 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
-from .api import DEFAULT_CONSUMPTION, AuthError, Portal, PortalError
+from .api import AuthError, Portal, PortalError
 from .const import CONF_CONSUMPTION_GAS, CONF_CONSUMPTION_POWER, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ STEP_REAUTH_DATA_SCHEMA = vol.Schema({vol.Required(CONF_PASSWORD): str})
 
 class StadtwerkeKleveConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
+    MINOR_VERSION = 2
 
     @staticmethod
     @callback
@@ -101,11 +102,11 @@ class StadtwerkeKleveOptionsFlow(OptionsFlow):
             {
                 vol.Required(
                     CONF_CONSUMPTION_POWER,
-                    default=options.get(CONF_CONSUMPTION_POWER, DEFAULT_CONSUMPTION),
+                    default=options.get(CONF_CONSUMPTION_POWER, 0),
                 ): consumption,
                 vol.Required(
                     CONF_CONSUMPTION_GAS,
-                    default=options.get(CONF_CONSUMPTION_GAS, DEFAULT_CONSUMPTION),
+                    default=options.get(CONF_CONSUMPTION_GAS, 0),
                 ): consumption,
             }
         )
