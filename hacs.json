@@ -1,4 +1,5 @@
 {
   "name": "Stadtwerke Kleve",
-  "homeassistant": "2025.2.0"
+  "homeassistant": "2025.2.0",
+  "country": "DE"
 }
