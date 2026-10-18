@@ -121,7 +121,6 @@ class PortalData:
     tariffs: list[Tariff] = field(default_factory=list)
     # Reading history per meter number, oldest first.
     history: dict[str, list[tuple[date, float]]] = field(default_factory=dict)
-    # Consumption over the last year per meter number, from the history.
     consumption: dict[str, Consumption] = field(default_factory=dict)
 
 
