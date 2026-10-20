@@ -8,11 +8,14 @@ It logs in with your portal username and password and adds these sensors:
 | Sensor | Unit | Notes |
 |---|---|---|
 | Meter reading electricity / gas / water | kWh / m³ | last reading the portal knows; attributes `reading_date`, `meter_number`, `obis` |
+| Consumption last 12 months electricity / gas / water | kWh / m³ | from the reading history, interpolated to exactly one year; attributes `period_start`, `period_end`, `readings` |
 | Advance payment electricity / gas / water | EUR | next payment per contract; attribute `installments` lists the upcoming ones (`due`, `amount`, `status`) |
 | Total advance payment | EUR | sum of all contracts |
 | Next payment due | date | |
 | Price electricity / gas / water | EUR/kWh, EUR/m³ | attributes `product`, `source`, `price_details` |
 | Base price per year electricity / gas / water | EUR | |
+| Price guarantee until electricity / gas / water | date | only for contracts with a price guarantee; attributes `product`, `contract_number`, `contract_start`, `contract_end` |
+| Next possible cancellation electricity / gas / water | date | same attributes |
 | Last invoice | EUR | negative means credit; attributes `invoice_date`, `invoice_number`, `invoice_type` |
 
 Entity names follow the Home Assistant language (German names in a German setup).
@@ -31,8 +34,9 @@ details pages. A portal update can break it. It polls every 6 hours.
   shown for existing contracts, so they come from the portal's public price
   calculator, matched by product name. They are the current list prices of
   your product and can differ from what your contract guarantees.
-- Gas prices are tiered by annual consumption. Set your consumption in the
-  integration options (default 3000 kWh, the lowest tier).
+- Electricity and gas prices depend on the annual consumption. By default it
+  is estimated from the meter readings (gas converted with 10 kWh/m³); you
+  can set your own value in kWh in the integration options.
 
 ## Installation (HACS)
 

@@ -92,6 +92,24 @@
       "base_price_water": {
         "name": "Water base price per year{suffix}"
       },
+      "price_guarantee_power": {
+        "name": "Electricity price guarantee until{suffix}"
+      },
+      "price_guarantee_gas": {
+        "name": "Gas price guarantee until{suffix}"
+      },
+      "price_guarantee_water": {
+        "name": "Water price guarantee until{suffix}"
+      },
+      "next_cancellation_power": {
+        "name": "Electricity next possible cancellation{suffix}"
+      },
+      "next_cancellation_gas": {
+        "name": "Gas next possible cancellation{suffix}"
+      },
+      "next_cancellation_water": {
+        "name": "Water next possible cancellation{suffix}"
+      },
       "payment_total": {
         "name": "Total advance payment"
       },

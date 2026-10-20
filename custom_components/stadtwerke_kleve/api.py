@@ -105,6 +105,19 @@ class Contract:
 
 
 @dataclass
+class ContractTerms:
+    """Dates of a contract as listed in the contract widget."""
+
+    contract_no: str
+    media: str
+    product: str
+    start: date | None
+    price_guarantee_until: date | None
+    next_cancellation: date | None
+    end: date | None
+
+
+@dataclass
 class PortalData:
     """Everything read from the portal in one poll."""
 
@@ -122,6 +135,7 @@ class PortalData:
     # Reading history per meter number, oldest first.
     history: dict[str, list[tuple[date, float]]] = field(default_factory=dict)
     consumption: dict[str, Consumption] = field(default_factory=dict)
+    contract_terms: list[ContractTerms] = field(default_factory=list)
 
 
 @dataclass
@@ -244,6 +258,42 @@ def consumption_last_year(readings: list[tuple[date, float]]) -> Consumption | N
             # A corrected lower reading or a replaced counter runs backwards.
             return Consumption(used, start, end) if used >= 0 else None
     return None
+
+
+def _iso_date(text: str | None) -> date | None:
+    """Parse the date part of an ISO timestamp like "2024-05-30T00:00:00.000+02:00"."""
+    try:
+        return date.fromisoformat((text or "")[:10])
+    except ValueError:
+        return None
+
+
+def parse_contract_terms(widget: dict, today: date) -> list[ContractTerms]:
+    """Read start, price guarantee, cancellation and end date of every running contract."""
+    terms = []
+    for c in (widget.get("model") or {}).get("subElements") or []:
+        if not c.get("contractNo"):
+            continue
+        end = _date(c.get("contractEndDateString")) or _iso_date(c.get("contractEndDate"))
+        if end and end < today:
+            continue
+        # Contracts without a price guarantee (general tariff) report the
+        # current day here, and an expired guarantee is no guarantee either.
+        guarantee = _date(c.get("contractBindingDate"))
+        if guarantee and guarantee <= today:
+            guarantee = None
+        terms.append(
+            ContractTerms(
+                contract_no=c["contractNo"],
+                media=c.get("mediaType", ""),
+                product=c.get("product", ""),
+                start=_date(c.get("contractDateString")) or _iso_date(c.get("contractDate")),
+                price_guarantee_until=guarantee,
+                next_cancellation=_date(c.get("nextPossibleCancellationDate")),
+                end=end,
+            )
+        )
+    return terms
 
 
 def parse_contracts(page: str) -> list[Contract]:
@@ -498,6 +548,14 @@ class Portal:
             _LOGGER.debug("%s not available: %s", path, err)
             return ""
 
+    async def _optional_json(self, path: str) -> dict:
+        """Fetch a JSON endpoint whose data is extra; an empty dict if it fails."""
+        try:
+            return await self._fetch_json(path)
+        except (PortalError, aiohttp.ClientError, TimeoutError) as err:
+            _LOGGER.debug("%s not available: %s", path, err)
+            return {}
+
     async def fetch(self, consumption: Mapping[str, int] | None = None) -> PortalData:
         """Read everything.
 
@@ -520,6 +578,9 @@ class Portal:
                 for meter_no, readings in data.history.items()
                 if (used := consumption_last_year(readings))
             }
+            data.contract_terms = parse_contract_terms(
+                await self._optional_json("contractWidget.json"), date.today()
+            )
             try:
                 # Last, because the price calculator drops the login session.
                 data.tariffs = await self._tariffs(self._consumption(data, consumption or {}))
