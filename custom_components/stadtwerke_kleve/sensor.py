@@ -24,6 +24,7 @@ from . import StadtwerkeKleveConfigEntry
 from .api import (
     START_URL,
     Consumption,
+    ContractTerms,
     Installment,
     Payment,
     PortalData,
@@ -39,6 +40,10 @@ READING_UNITS = {
     "GAS": (SensorDeviceClass.GAS, UnitOfVolume.CUBIC_METERS),
     "WATER": (SensorDeviceClass.WATER, UnitOfVolume.CUBIC_METERS),
 }
+CONTRACT_DATES = (
+    ("price_guarantee", "price_guarantee_until"),
+    ("next_cancellation", "next_cancellation"),
+)
 PRICE_UNITS = {
     "POWER": f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
     "GAS": f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
@@ -135,6 +140,15 @@ async def async_setup_entry(
             EnergyPriceSensor(coordinator, entry, tariff.media, index, suffix),
             BasePriceSensor(coordinator, entry, tariff.media, index, suffix),
         ]
+
+    per_media = Counter(t.media for t in data.contract_terms)
+    for terms in data.contract_terms:
+        if terms.media not in READING_UNITS:
+            continue
+        suffix = f" {terms.contract_no}" if per_media[terms.media] > 1 else ""
+        for kind, attr in CONTRACT_DATES:
+            if getattr(terms, attr):
+                entities.append(ContractDateSensor(coordinator, entry, terms, kind, attr, suffix))
 
     entities += [SummarySensor(coordinator, entry, desc) for desc in SUMMARY_SENSORS]
     async_add_entities(entities)
@@ -344,6 +358,57 @@ class SummarySensor(StadtwerkeKleveSensor):
         if self.entity_description.attrs_fn is None:
             return None
         return self.entity_description.attrs_fn(self.coordinator.data)
+
+
+class ContractDateSensor(StadtwerkeKleveSensor):
+    """End of the price guarantee or next possible cancellation date of a contract."""
+
+    _attr_device_class = SensorDeviceClass.DATE
+
+    def __init__(
+        self,
+        coordinator: Coordinator,
+        entry: StadtwerkeKleveConfigEntry,
+        terms: ContractTerms,
+        kind: str,
+        attr: str,
+        suffix: str,
+    ) -> None:
+        """Set name and the date field this sensor shows."""
+        super().__init__(coordinator, entry, f"{kind}_{terms.contract_no}")
+        self._contract_no = terms.contract_no
+        self._field = attr
+        self._attr_translation_key = f"{kind}_{terms.media.lower()}"
+        self._attr_translation_placeholders = {"suffix": suffix}
+
+    def _terms(self) -> ContractTerms | None:
+        """Return the dates of this contract from the latest data."""
+        terms = self.coordinator.data.contract_terms
+        return next((t for t in terms if t.contract_no == self._contract_no), None)
+
+    @property
+    def available(self) -> bool:
+        """Return False once the contract is no longer listed."""
+        return super().available and self._terms() is not None
+
+    @property
+    def native_value(self) -> date | None:
+        """Return the date."""
+        terms = self._terms()
+        return getattr(terms, self._field) if terms else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return product, contract number, start and end of the contract."""
+        terms = self._terms()
+        if terms is None:
+            return None
+        return {
+            "product": terms.product,
+            "contract_number": terms.contract_no,
+            "contract_start": terms.start,
+            "contract_end": terms.end,
+        }
 
 
 class TariffSensor(StadtwerkeKleveSensor):

@@ -231,6 +231,54 @@ assert api.Portal._consumption(data, {}) == {"POWER": 1000, "GAS": 6000}
 assert api.Portal._consumption(data, {"GAS": 12000}) == {"POWER": 1000, "GAS": 12000}
 assert api.Portal._consumption(api.PortalData(), {}) == {"POWER": 3000, "GAS": 3000}
 
+
+def contract(no, media, product, start, binding="", cancel="", end=""):
+    """Build a contractWidget.json entry with the fields the portal sends."""
+    return {
+        "contractNo": no,
+        "mediaType": media,
+        "product": product,
+        "contractDate": "2024-05-30T00:00:00.000+02:00",
+        "contractDateString": start,
+        "contractBindingDate": binding,
+        "nextPossibleCancellationDate": cancel,
+        "contractEndDate": "",
+        "contractEndDateString": end,
+        "cancellationPeriod": "",
+    }
+
+
+CONTRACT_WIDGET = {
+    "model": {
+        "subElements": [
+            contract("C1", "POWER", "CleverStrom2030", "30.05.2024", "31.12.2030", "31.12.2030"),
+            # Measured: the general water tariff reports today for both dates.
+            contract(
+                "C3", "WATER", "Allgemeiner Tarif Wasser", "01.06.2024", "20.10.2026", "20.10.2026"
+            ),
+            contract("", "GAS", "ohne Nummer", "01.06.2024"),
+            contract("C0", "POWER", "CleverStrom2023", "01.01.2023", end="29.05.2024"),
+        ]
+    }
+}
+terms = api.parse_contract_terms(CONTRACT_WIDGET, date(2026, 10, 20))
+assert [t.contract_no for t in terms] == ["C1", "C3"], terms
+assert (terms[0].start, terms[0].price_guarantee_until, terms[0].next_cancellation) == (
+    date(2024, 5, 30),
+    date(2030, 12, 31),
+    date(2030, 12, 31),
+)
+assert (terms[1].price_guarantee_until, terms[1].next_cancellation, terms[1].end) == (
+    None,
+    date(2026, 10, 20),
+    None,
+)
+assert api.parse_contract_terms({}, date(2026, 10, 20)) == []
+# An ended contract that only carries the ISO field is skipped as well.
+ended = contract("C9", "GAS", "Alt", "")
+ended["contractEndDate"] = "2025-12-31T00:00:00.000+01:00"
+assert api.parse_contract_terms({"model": {"subElements": [ended]}}, date(2026, 10, 20)) == []
+
 assert api._has_login_errors('{"hasFieldErrors": true, "fielderrors": {}}')
 assert not api._has_login_errors('{"hasFieldErrors": false, "hasGlobalErrors": false}')
 assert not api._has_login_errors("<html>maintenance</html>")

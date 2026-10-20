@@ -92,6 +92,24 @@
       "base_price_water": {
         "name": "Grundpreis Wasser pro Jahr{suffix}"
       },
+      "price_guarantee_power": {
+        "name": "Preisbindung Strom bis{suffix}"
+      },
+      "price_guarantee_gas": {
+        "name": "Preisbindung Gas bis{suffix}"
+      },
+      "price_guarantee_water": {
+        "name": "Preisbindung Wasser bis{suffix}"
+      },
+      "next_cancellation_power": {
+        "name": "Nächster Kündigungstermin Strom{suffix}"
+      },
+      "next_cancellation_gas": {
+        "name": "Nächster Kündigungstermin Gas{suffix}"
+      },
+      "next_cancellation_water": {
+        "name": "Nächster Kündigungstermin Wasser{suffix}"
+      },
       "payment_total": {
         "name": "Abschlag gesamt"
       },

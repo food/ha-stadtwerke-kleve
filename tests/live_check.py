@@ -51,6 +51,12 @@ async def main() -> None:
             if used
             else "no yearly value",
         )
+    for c in data.contract_terms:
+        print(
+            f"contract {c.media:6} {c.contract_no}: start {c.start},",
+            f"price guarantee until {c.price_guarantee_until},",
+            f"next cancellation {c.next_cancellation}, end {c.end}",
+        )
     for t in data.tariffs:
         print(
             f"tariff {t.media:6} {t.energy_price} EUR/unit, {t.base_price} EUR/year, {t.source}: {t.product}"
