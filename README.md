@@ -38,6 +38,32 @@ details pages. A portal update can break it. It polls every 6 hours.
   is estimated from the meter readings (gas converted with 10 kWh/m³); you
   can set your own value in kWh in the integration options.
 
+## Example: reminder before the price guarantee ends
+
+A notification six weeks before the electricity price guarantee runs out.
+Entity ids depend on the language and area of your setup, look yours up
+under Developer tools → States.
+
+```yaml
+automation:
+  - alias: Price guarantee electricity ends soon
+    triggers:
+      - trigger: time
+        at: "09:00:00"
+    conditions:
+      - condition: template
+        value_template: >
+          {% set e = 'sensor.stadtwerke_kleve_electricity_price_guarantee_until' %}
+          {{ has_value(e) and (as_datetime(states(e)).date() - now().date()).days == 42 }}
+    actions:
+      - action: notify.notify
+        data:
+          message: >
+            The electricity price guarantee ends on
+            {{ states('sensor.stadtwerke_kleve_electricity_price_guarantee_until') }}.
+            Time to compare tariffs.
+```
+
 ## Installation (HACS)
 
 1. HACS → ⋮ → *Custom repositories* → add `https://github.com/food/ha-stadtwerke-kleve`, type *Integration*.
