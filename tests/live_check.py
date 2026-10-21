@@ -57,6 +57,9 @@ async def main() -> None:
             f"price guarantee until {c.price_guarantee_until},",
             f"next cancellation {c.next_cancellation}, end {c.end}",
         )
+    print(f"inbox: {data.unread_messages} unread, {len(data.messages)} messages")
+    for m in data.messages[:3]:
+        print(f"  {m.created} {'unread' if m.unread else 'read  '} {m.subject}")
     for t in data.tariffs:
         print(
             f"tariff {t.media:6} {t.energy_price} EUR/unit, {t.base_price} EUR/year, {t.source}: {t.product}"

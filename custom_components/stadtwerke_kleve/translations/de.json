@@ -118,6 +118,9 @@
       },
       "invoice": {
         "name": "Letzte Rechnung"
+      },
+      "unread_messages": {
+        "name": "Ungelesene Nachrichten"
       }
     }
   }

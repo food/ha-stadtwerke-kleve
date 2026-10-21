@@ -17,6 +17,7 @@ It logs in with your portal username and password and adds these sensors:
 | Price guarantee until electricity / gas / water | date | only for contracts with a price guarantee; attributes `product`, `contract_number`, `contract_start`, `contract_end` |
 | Next possible cancellation electricity / gas / water | date | same attributes |
 | Last invoice | EUR | negative means credit; attributes `invoice_date`, `invoice_number`, `invoice_type` |
+| Unread messages | | unread entries in the portal inbox; attributes `latest_subject`, `latest_date`, `messages` (last 10: `subject`, `date`, `unread`). Messages are only read, never marked as read |
 
 Entity names follow the Home Assistant language (German names in a German setup).
 
@@ -62,6 +63,29 @@ automation:
             The electricity price guarantee ends on
             {{ states('sensor.stadtwerke_kleve_electricity_price_guarantee_until') }}.
             Time to compare tariffs.
+```
+
+## Example: notify about new messages in the portal inbox
+
+`not_from` keeps the automation quiet when the sensor comes back after an
+outage.
+
+```yaml
+automation:
+  - alias: New message in the Stadtwerke inbox
+    triggers:
+      - trigger: state
+        entity_id: sensor.stadtwerke_kleve_unread_messages
+        not_from: [unknown, unavailable]
+    conditions:
+      - condition: template
+        value_template: "{{ trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}"
+    actions:
+      - action: notify.notify
+        data:
+          message: >
+            New message from the Stadtwerke:
+            {{ state_attr('sensor.stadtwerke_kleve_unread_messages', 'latest_subject') }}
 ```
 
 ## Installation (HACS)

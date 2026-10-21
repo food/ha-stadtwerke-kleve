@@ -279,6 +279,49 @@ ended = contract("C9", "GAS", "Alt", "")
 ended["contractEndDate"] = "2025-12-31T00:00:00.000+01:00"
 assert api.parse_contract_terms({"model": {"subElements": [ended]}}, date(2026, 10, 20)) == []
 
+
+def inbox_entry(subject, created, unread):
+    """Build a postboxWidget.json entry with the fields the portal sends."""
+    return {
+        "documentRefId": "",
+        "entryType": ["POSTBOX_DOCUMENT_FILE"],
+        "hasAttachment": False,
+        "unread": unread,
+        "subject": subject,
+        "description": "Für Ihre Kundennummer 0000 liegt ein neues Dokument bereit.",
+        "id": "00000000-0000-0000-0000-000000000000",
+        "creationDate": created,
+        "content": "",
+    }
+
+
+# Same order as the portal sends them; dates with a two-digit year.
+POSTBOX_WIDGET = {
+    "model": {
+        "postboxEntries": [
+            inbox_entry("Vertragsbestätigung", "28.05.24", False),
+            inbox_entry("Abschlagsmitteilung", "23.01.26", True),
+            inbox_entry("Abschlagsmitteilung", "20.01.25", False),
+        ],
+        "newsletterEntries": [],
+        "count": 3,
+        "unreadCount": 1,
+    }
+}
+unread, messages = api.parse_postbox(POSTBOX_WIDGET)
+assert unread == 1
+assert [(m.subject, m.created, m.unread) for m in messages] == [
+    ("Abschlagsmitteilung", date(2026, 1, 23), True),
+    ("Abschlagsmitteilung", date(2025, 1, 20), False),
+    ("Vertragsbestätigung", date(2024, 5, 28), False),
+], messages
+# Without unreadCount the flags are counted; no widget means no value at all.
+del POSTBOX_WIDGET["model"]["unreadCount"]
+assert api.parse_postbox(POSTBOX_WIDGET)[0] == 1
+assert api.parse_postbox({}) == (None, [])
+assert api._short_date("23.01.2026") == date(2026, 1, 23)
+assert api._short_date("") is None
+
 assert api._has_login_errors('{"hasFieldErrors": true, "fielderrors": {}}')
 assert not api._has_login_errors('{"hasFieldErrors": false, "hasGlobalErrors": false}')
 assert not api._has_login_errors("<html>maintenance</html>")
