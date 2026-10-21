@@ -87,6 +87,20 @@ SUMMARY_SENSORS = (
             "invoice_type": data.invoice_type,
         },
     ),
+    StadtwerkeKleveSensorDescription(
+        key="unread_messages",
+        translation_key="unread_messages",
+        icon="mdi:email-outline",
+        value_fn=lambda data: data.unread_messages,
+        attrs_fn=lambda data: {
+            "latest_subject": data.messages[0].subject if data.messages else None,
+            "latest_date": data.messages[0].created if data.messages else None,
+            "messages": [
+                {"subject": m.subject, "date": m.created, "unread": m.unread}
+                for m in data.messages[:10]
+            ],
+        },
+    ),
 )
 
 
@@ -334,6 +348,8 @@ class PaymentSensor(StadtwerkeKleveSensor):
 
 class SummarySensor(StadtwerkeKleveSensor):
     """Sensor defined by a description."""
+
+    _unrecorded_attributes = frozenset({"messages"})
 
     entity_description: StadtwerkeKleveSensorDescription
 

@@ -118,6 +118,9 @@
       },
       "invoice": {
         "name": "Last invoice"
+      },
+      "unread_messages": {
+        "name": "Unread messages"
       }
     }
   }

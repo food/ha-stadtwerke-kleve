@@ -118,6 +118,15 @@ class ContractTerms:
 
 
 @dataclass
+class Message:
+    """One entry of the portal inbox."""
+
+    subject: str
+    created: date | None
+    unread: bool
+
+
+@dataclass
 class PortalData:
     """Everything read from the portal in one poll."""
 
@@ -136,6 +145,9 @@ class PortalData:
     history: dict[str, list[tuple[date, float]]] = field(default_factory=dict)
     consumption: dict[str, Consumption] = field(default_factory=dict)
     contract_terms: list[ContractTerms] = field(default_factory=list)
+    unread_messages: int | None = None
+    # Inbox entries, newest first.
+    messages: list[Message] = field(default_factory=list)
 
 
 @dataclass
@@ -260,6 +272,14 @@ def consumption_last_year(readings: list[tuple[date, float]]) -> Consumption | N
     return None
 
 
+def _short_date(text: str | None) -> date | None:
+    """Parse a date with a two-digit year like "23.01.26", as the inbox uses it."""
+    try:
+        return datetime.strptime((text or "").strip(), "%d.%m.%y").date()
+    except ValueError:
+        return _date(text)
+
+
 def _iso_date(text: str | None) -> date | None:
     """Parse the date part of an ISO timestamp like "2024-05-30T00:00:00.000+02:00"."""
     try:
@@ -294,6 +314,22 @@ def parse_contract_terms(widget: dict, today: date) -> list[ContractTerms]:
             )
         )
     return terms
+
+
+def parse_postbox(widget: dict) -> tuple[int | None, list[Message]]:
+    """Read the number of unread messages and the inbox entries, newest first."""
+    model = widget.get("model") or {}
+    if not model:
+        return None, []
+    messages = [
+        Message(e.get("subject", ""), _short_date(e.get("creationDate")), e.get("unread") is True)
+        for e in model.get("postboxEntries") or []
+    ]
+    messages.sort(key=lambda m: m.created or date.min, reverse=True)
+    unread = model.get("unreadCount")
+    if not isinstance(unread, int):
+        unread = sum(m.unread for m in messages)
+    return unread, messages
 
 
 def parse_contracts(page: str) -> list[Contract]:
@@ -580,6 +616,9 @@ class Portal:
             }
             data.contract_terms = parse_contract_terms(
                 await self._optional_json("contractWidget.json"), date.today()
+            )
+            data.unread_messages, data.messages = parse_postbox(
+                await self._optional_json("postboxWidget.json")
             )
             try:
                 # Last, because the price calculator drops the login session.

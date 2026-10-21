@@ -35,11 +35,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: StadtwerkeKleveConfigEnt
     async def async_update_data() -> PortalData:
         """Fetch everything from the portal."""
         try:
-            return await portal.fetch(consumption)
+            data = await portal.fetch(consumption)
         except AuthError as err:
             raise ConfigEntryAuthFailed("Login rejected by the portal") from err
         except PortalError as err:
             raise UpdateFailed(str(err)) from err
+        # Keep the last inbox state when only the inbox could not be read, so
+        # an automation on new messages does not fire again after an outage.
+        if data.unread_messages is None and coordinator.data is not None:
+            data.unread_messages = coordinator.data.unread_messages
+            data.messages = coordinator.data.messages
+        return data
 
     coordinator = DataUpdateCoordinator(
         hass,
